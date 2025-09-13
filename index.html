@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Walkie Talkie Inventory</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{padding:18px;max-width:980px;margin:0 auto}
+    h1{font-size:1.6rem;margin-bottom:6px}
+    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+    .card{background:#f7f7f9;padding:12px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+    .counts{font-size:1.2rem;margin-bottom:8px}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button{padding:8px 10px;border-radius:6px;border:1px solid #ccc;background:white;cursor:pointer}
+    select,input[type=number]{padding:6px;border-radius:6px;border:1px solid #ccc}
+    .list{max-height:320px;overflow:auto;padding:6px;border-radius:6px;background:#fff;border:1px dashed #e1e1e1}
+    .item{display:flex;justify-content:space-between;padding:6px 8px;border-bottom:1px solid rgba(0,0,0,0.03)}
+    .toolbar{display:flex;gap:8px;margin-top:12px;align-items:center}
+    .small{font-size:0.9rem;color:#555}
+    .success{color:green}
+  </style>
+</head>
+<body>
+  <h1>Walkie Talkie Inventory</h1>
+  <div class="small">Data loaded from <code>data.json</code>. You can Download/Upload JSON to persist changes.</div>
+
+  <div class="toolbar">
+    <label>Issue from: <strong>In Hand</strong></label>
+    <label>To:
+      <select id="toSelect">
+        <option value="mainline">Main Line Crew</option>
+        <option value="juggler">Juggler Crew</option>
+      </select>
+    </label>
+    <label>Quantity: <input id="qtyInput" type="number" value="1" min="1" style="width:80px"/></label>
+    <button id="issueBtn">Issue</button>
+    <button id="resetBtn">Reset to initial JSON</button>
+    <button id="downloadBtn">Download JSON</button>
+    <input id="uploadFile" type="file" accept="application/json" />
+  </div>
+
+  <div style="margin-top:10px">Total Walkies: <strong id="totalDisplay">0</strong></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="counts">In Hand: <span id="inHandCount">0</span></div>
+      <div class="list" id="inHandList"></div>
+    </div>
+
+    <div class="card">
+      <div class="counts">Main Line Crew: <span id="mainlineCount">0</span></div>
+      <div class="list" id="mainlineList"></div>
+    </div>
+
+    <div class="card">
+      <div class="counts">Juggler Crew: <span id="jugglerCount">0</span></div>
+      <div class="list" id="jugglerList"></div>
+    </div>
+  </div>
+
+  <script>
+    // App state
+    const defaultUrl = 'data.json';
+    let state = { total:0, inHand:0, mainline:0, juggler:0 };
+    let initialState = null;
+
+    function render() {
+      document.getElementById('totalDisplay').textContent = state.total;
+      document.getElementById('inHandCount').textContent = state.inHand;
+      document.getElementById('mainlineCount').textContent = state.mainline;
+      document.getElementById('jugglerCount').textContent = state.juggler;
+
+      // Render lists — numbered items
+      const inHandList = document.getElementById('inHandList');
+      const mainlineList = document.getElementById('mainlineList');
+      const jugglerList = document.getElementById('jugglerList');
+      inHandList.innerHTML = '';
+      mainlineList.innerHTML = '';
+      jugglerList.innerHTML = '';
+
+      // We'll create numbered IDs for display. Mainline first N items, etc.
+      let id = 1;
+      for (let i=0;i<state.inHand;i++){
+        const el = document.createElement('div'); el.className='item'; el.textContent = 'Walkie #' + id; inHandList.appendChild(el); id++;
+      }
+      for (let i=0;i<state.mainline;i++){
+        const el = document.createElement('div'); el.className='item'; el.textContent = 'Walkie #' + id; mainlineList.appendChild(el); id++;
+      }
+      for (let i=0;i<state.juggler;i++){
+        const el = document.createElement('div'); el.className='item'; el.textContent = 'Walkie #' + id; jugglerList.appendChild(el); id++;
+      }
+
+      // Persist to localStorage so browser remembers while running
+      localStorage.setItem('walkieState', JSON.stringify(state));
+    }
+
+    function loadFromObject(obj){
+      // Accept both old-style and full object
+      if (typeof obj.total !== 'undefined') state.total = Number(obj.total);
+      if (typeof obj.inHand !== 'undefined') state.inHand = Number(obj.inHand);
+      if (typeof obj.mainline !== 'undefined') state.mainline = Number(obj.mainline);
+      if (typeof obj.juggler !== 'undefined') state.juggler = Number(obj.juggler);
+      render();
+    }
+
+    // Try localStorage first, then fetch data.json
+    async function init(){
+      const ls = localStorage.getItem('walkieState');
+      if (ls){
+        try{ loadFromObject(JSON.parse(ls)); console.log('Loaded state from localStorage'); return; }catch(e){console.warn(e)}
+      }
+
+      try{
+        const res = await fetch(defaultUrl, {cache:'no-cache'});
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        initialState = JSON.parse(JSON.stringify(j));
+        loadFromObject(j);
+      }catch(err){
+        // If fetch fails (file not found), create a default state
+        console.warn('Could not fetch data.json — creating default. Error:', err);
+        const fallback = { total:55, inHand:55, mainline:0, juggler:0 };
+        initialState = JSON.parse(JSON.stringify(fallback));
+        loadFromObject(fallback);
+      }
+    }
+
+    document.getElementById('issueBtn').addEventListener('click', ()=>{
+      const to = document.getElementById('toSelect').value;
+      const qty = Number(document.getElementById('qtyInput').value) || 0;
+      if (qty <= 0) return alert('Enter quantity >= 1');
+      if (qty > state.inHand) return alert('Not enough in hand.');
+      state.inHand -= qty;
+      if (to === 'mainline') state.mainline += qty;
+      else state.juggler += qty;
+      render();
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      if (!initialState) return alert('No initial JSON available');
+      state = JSON.parse(JSON.stringify(initialState));
+      render();
+    });
+
+    document.getElementById('downloadBtn').addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'data.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('uploadFile').addEventListener('change',(e)=>{
+      const f = e.target.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = ()=>{
+        try{
+          const obj = JSON.parse(r.result);
+          state = { total: Number(obj.total||0), inHand:Number(obj.inHand||0), mainline:Number(obj.mainline||0), juggler:Number(obj.juggler||0) };
+          initialState = JSON.parse(JSON.stringify(state));
+          render();
+        }catch(err){alert('Invalid JSON file');}
+      };
+      r.readAsText(f);
+    });
+
+    // Initialize on load
+    init();
+  </script>
+</body>
+</html>
